@@ -22,6 +22,7 @@ def _post_json(path, payload, token=None):
     if token is not None:
         headers['x-access-token'] = token
     response = requests.post(API_BASE+path, json=payload, headers=headers)
+    response.raise_for_status()
     return response.json()
 
 def _get_random_code(email):
@@ -35,6 +36,8 @@ def _get_access_token(email, password, rc, timestamp):
     payload = {'countryCode':1, 'account':email, 'password':pd, 
         'browser':'Chrome107', 'equipment':"1", "loginMethod":"1", "timestamp":timestamp, "language":"en"}
     data = _post_json("official/user/account/login/new", payload)
+    if not data['success']:
+        raise RuntimeError(data['errorMsg'])
     return data['token']
 
 # returns access token
@@ -50,7 +53,9 @@ def file_list(token, directory=0):
 def download_file(token, id, filename=None):
     payload = {"id":id, "type":0}
     data = _post_json("file/download/url", payload, token=token)
-    c = requests.get(data['url']).content
+    response = requests.get(data['url'])
+    response.raise_for_status()
+    c = response.content
     if(filename is not None):
         f = open(filename,'wb')
         f.write(c)
@@ -65,12 +70,13 @@ def upload_file(token, filename, directory=0):
     data = _post_json('file/upload/apply', payload, token=token)
     if(data['success']):
         put_headers = {'Authorization':data['s3Authorization'], 'x-amz-date':data['xamzDate'], "x-amz-content-sha256": "UNSIGNED-PAYLOAD"}
-        requests.put(data['url'], file_contents, headers=put_headers)
+        response = requests.put(data['url'], file_contents, headers=put_headers)
+        response.raise_for_status()
         inner_name = os.path.basename(data['url'])
         payload = {"directoryId":directory, "fileName":filename, "fileSize":len(file_contents), "innerName":inner_name,"md5":data_md5}
         data = _post_json("file/upload/finish", payload, token=token)
     else:
-        print("Error: %s" % (data['errorMsg']))
+        raise RuntimeError("Error: %s" % (data['errorMsg']))
 
 # as an example, we download the latest NYT crossword and put it on the folder Document/puzzles
 # your auth.txt file in the current folder should have
